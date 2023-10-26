@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -76,21 +75,20 @@ func dumpFile(filename string) {
 		switch it := decl.(type) {
 		case *ast.GenDecl:
 			declarations = append(declarations, handleGenDecl(fset, it))
-		case *ast.FuncDecl:
-			declarations = append(declarations, handleFuncDecl(fset, it))
-		default:
-			declarations = append(declarations, Tree{
-				"unhandledDeclarationType": fmt.Sprintf("%T", decl),
-			})
+			//case *ast.FuncDecl:
+			//	declarations = append(declarations, handleFuncDecl(fset, it))
+			//default:
+			//	declarations = append(declarations, Tree{
+			//		"unhandledDeclarationType": fmt.Sprintf("%T", decl),
+			//	})
 		}
 	}
 
-	output, err := json.MarshalIndent(declarations, "", "    ")
-	if err != nil {
-		log.Fatalf("failed to marshal parse tree to JSON for %s: %v", filename, err)
-	}
-
-	fmt.Println(string(output))
+	//output, err := json.MarshalIndent(declarations, "", "    ")
+	//if err != nil {
+	//	log.Fatalf("failed to marshal parse tree to JSON for %s: %v", filename, err)
+	//}
+	//fmt.Println(string(output))
 }
 
 func handleGenDecl(fset *token.FileSet, it *ast.GenDecl) Tree {
@@ -139,65 +137,78 @@ func handleType(fset *token.FileSet, it ast.Expr) interface{} {
 		return Tr("array", handleType(fset, x.Elt))
 	case *ast.StarExpr:
 		return Tr("star", handleType(fset, x.X))
-	case *ast.InterfaceType:
-		return Tr("interface", handleMethods(fset, x.Methods))
+	//case *ast.InterfaceType:
+	//	return Tr("interface", handleMethods(fset, x.Methods))
 	case *ast.SelectorExpr:
-		return Tree{
-			"pre": fmt.Sprintf("%s", handleType(fset, x.X)),
-			"sel": x.Sel.String(),
-		}
-	case *ast.FuncType:
-		return handleFuncType(fset, x)
-	case *ast.MapType:
-		return Tree{
-			"type":  "map",
-			"key":   handleType(fset, x.Key),
-			"value": handleType(fset, x.Value),
-		}
+		//return Tree{
+		//	"pre": fmt.Sprintf("%s", handleType(fset, x.X)),
+		//	"sel": x.Sel.String(),
+		//}
+		return x.Sel.String()
+	//case *ast.FuncType:
+	//	return handleFuncType(fset, x)
+	//case *ast.MapType:
+	//	return Tree{
+	//		"type":  "map",
+	//		"key":   handleType(fset, x.Key),
+	//		"value": handleType(fset, x.Value),
+	//	}
 	default:
 		return Tr("unhandledType", fmt.Sprintf("%T", it))
 	}
 }
 
-func handleMethods(fset *token.FileSet, it *ast.FieldList) Tree {
+func getDataType(fset *token.FileSet, it ast.Expr) string {
 
-	meths := []Tree{}
-	composed := []Tree{}
-
-	for _, x := range it.List {
-
-		if f, ok := x.Type.(*ast.Ident); ok {
-			composed = append(composed, Tr("name", f.Name))
-			continue
-		}
-
-		if len(x.Names) == 0 {
-			ast.Print(fset, x)
-			continue
-		}
-
-		t := Tr("name", x.Names[0].Name)
-		methType := handleType(fset, x.Type)
-		if y, ok := methType.(Tree); ok {
-			t = t.merge(y)
-		} else {
-			t["type"] = methType
-		}
-		meths = append(meths, t)
+	switch x := it.(type) {
+	case *ast.Ident:
+		return x.String()
+	case *ast.SelectorExpr:
+		return x.Sel.String()
+	default:
+		return fmt.Sprintf("%T", it)
 	}
-
-	r := Tree{}
-
-	if len(meths) > 0 {
-		r["methods"] = meths
-	}
-
-	if len(composed) > 0 {
-		r["composed"] = composed
-	}
-
-	return r
 }
+
+// func handleMethods(fset *token.FileSet, it *ast.FieldList) Tree {
+
+// 	meths := []Tree{}
+// 	composed := []Tree{}
+
+// 	for _, x := range it.List {
+
+// 		if f, ok := x.Type.(*ast.Ident); ok {
+// 			composed = append(composed, Tr("name", f.Name))
+// 			continue
+// 		}
+
+// 		if len(x.Names) == 0 {
+// 			ast.Print(fset, x)
+// 			continue
+// 		}
+
+// 		t := Tr("name", x.Names[0].Name)
+// 		methType := handleType(fset, x.Type)
+// 		if y, ok := methType.(Tree); ok {
+// 			t = t.merge(y)
+// 		} else {
+// 			t["type"] = methType
+// 		}
+// 		meths = append(meths, t)
+// 	}
+
+// 	r := Tree{}
+
+// 	if len(meths) > 0 {
+// 		r["methods"] = meths
+// 	}
+
+// 	if len(composed) > 0 {
+// 		r["composed"] = composed
+// 	}
+
+// 	return r
+// }
 
 func handleStructType(fset *token.FileSet, it *ast.StructType) Tree {
 
@@ -205,8 +216,28 @@ func handleStructType(fset *token.FileSet, it *ast.StructType) Tree {
 
 	fields := []Tree{}
 
+	fmt.Println("")
+	fmt.Println("{")
+
 	for _, fld := range it.Fields.List {
 		for _, name := range fld.Names {
+			datatype := getDataType(fset, fld.Type)
+			vlu := ""
+
+			switch datatype {
+			case "int", "int16", "int32", "int64":
+				vlu = "1"
+			case "float16", "float32", "float64":
+				vlu = "1"
+			case "string":
+				vlu = "text"
+			case "Time":
+				vlu = "2023-10-15T10:11:12.0000Z"
+			case "OnlyTime":
+				vlu = "09:00:00"
+			}
+
+			fmt.Printf("\t\"%s\": \"%s\",\n", name.Name, vlu)
 			t := Tree{
 				"name": name.Name,
 				"type": handleType(fset, fld.Type),
@@ -218,54 +249,56 @@ func handleStructType(fset *token.FileSet, it *ast.StructType) Tree {
 		}
 	}
 
+	fmt.Println("}")
+
 	return Tr("fields", fields)
 }
 
-func handleFuncType(fset *token.FileSet, it *ast.FuncType) Tree {
+// func handleFuncType(fset *token.FileSet, it *ast.FuncType) Tree {
 
-	t := Tree{}
+// 	t := Tree{}
 
-	if it.Params != nil && len(it.Params.List) > 0 {
-		t["params"] = handleFieldList(fset, it.Params.List)
-	}
+// 	if it.Params != nil && len(it.Params.List) > 0 {
+// 		t["params"] = handleFieldList(fset, it.Params.List)
+// 	}
 
-	if it.Results != nil && len(it.Results.List) > 0 {
-		t["results"] = handleFieldList(fset, it.Results.List)
-	}
+// 	if it.Results != nil && len(it.Results.List) > 0 {
+// 		t["results"] = handleFieldList(fset, it.Results.List)
+// 	}
 
-	return t
-}
+// 	return t
+// }
 
-func handleFuncDecl(fset *token.FileSet, it *ast.FuncDecl) Tree {
+// func handleFuncDecl(fset *token.FileSet, it *ast.FuncDecl) Tree {
 
-	t := Tr("func", it.Name.Name)
+// 	t := Tr("func", it.Name.Name)
 
-	t = t.merge(handleFuncType(fset, it.Type))
+// 	t = t.merge(handleFuncType(fset, it.Type))
 
-	return t
-}
+// 	return t
+// }
 
-func handleFieldList(fset *token.FileSet, it []*ast.Field) []Tree {
+// func handleFieldList(fset *token.FileSet, it []*ast.Field) []Tree {
 
-	fields := []Tree{}
+// 	fields := []Tree{}
 
-	for _, fld := range it {
+// 	for _, fld := range it {
 
-		t := Tree{}
+// 		t := Tree{}
 
-		if len(fld.Names) > 0 {
-			t["name"] = fld.Names[0].Name
-		}
+// 		if len(fld.Names) > 0 {
+// 			t["name"] = fld.Names[0].Name
+// 		}
 
-		t["type"] = handleType(fset, fld.Type)
+// 		t["type"] = handleType(fset, fld.Type)
 
-		t = t.merge(handleFieldTag(fset, fld.Tag))
+// 		t = t.merge(handleFieldTag(fset, fld.Tag))
 
-		fields = append(fields, t)
-	}
+// 		fields = append(fields, t)
+// 	}
 
-	return fields
-}
+// 	return fields
+// }
 
 func handleFieldTag(fset *token.FileSet, it *ast.BasicLit) Tree {
 
